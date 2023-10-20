@@ -43,8 +43,12 @@ func HostnameValidator(hostname string) error {
 	return nil
 }
 
+func isReviewLab(host string) bool {
+	return strings.Contains(host, "review-lab.github.com")
+}
+
 func GraphQLEndpoint(hostname string) string {
-	if isGarage(hostname) {
+	if isGarage(hostname) || isReviewLab(hostname) {
 		return fmt.Sprintf("https://%s/api/graphql", hostname)
 	}
 	if ghauth.IsEnterprise(hostname) {
@@ -57,7 +61,7 @@ func GraphQLEndpoint(hostname string) string {
 }
 
 func RESTPrefix(hostname string) string {
-	if isGarage(hostname) {
+	if isGarage(hostname) || isReviewLab(hostname) {
 		return fmt.Sprintf("https://%s/api/v3/", hostname)
 	}
 	if ghauth.IsEnterprise(hostname) {
