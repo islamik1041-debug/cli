@@ -38,6 +38,7 @@ type finder struct {
 	remotesFn    func() (remotes.Remotes, error)
 	httpClient   func() (*http.Client, error)
 	branchConfig func(string) (git.BranchConfig, error)
+	atPushRef    func(string) (string, error)
 	progress     progressIndicator
 
 	repo       ghrepo.Interface
@@ -60,6 +61,9 @@ func NewFinder(factory *cmdutil.Factory) PRFinder {
 		progress:   factory.IOStreams,
 		branchConfig: func(s string) (git.BranchConfig, error) {
 			return factory.GitClient.ReadBranchConfig(context.Background(), s)
+		},
+		atPushRef: func(branch string) (string, error) {
+			return factory.GitClient.ReadAtPushRef(context.Background(), branch)
 		},
 	}
 }
@@ -228,6 +232,64 @@ func (f *finder) parseURL(prURL string) (ghrepo.Interface, int, error) {
 	repo := ghrepo.NewWithHost(m[1], m[2], u.Hostname())
 	prNumber, _ := strconv.Atoi(m[3])
 	return repo, prNumber, nil
+}
+
+func (f *finder) parseCurrentBranchWithAtPushRef() (string, int, error) {
+	// Get the current branch
+	branch, err := f.branchFn()
+	if err != nil {
+		return "", 0, err
+	}
+
+	// Handle the case where the branch is configured to merge a special PR head ref
+	branchConfig, err := f.branchConfig(branch)
+	if err != nil {
+		return "", 0, err
+	}
+
+	if m := prHeadRE.FindStringSubmatch(branchConfig.MergeRef); m != nil {
+		prNumber, _ := strconv.Atoi(m[1])
+		return "", prNumber, nil
+	}
+
+	// Use @{push} ref to resolve the pr's head ref
+	atPushRef, err := f.atPushRef(branch)
+	if err != nil {
+		return "", 0, err
+	}
+
+	// Find the @{push} remote
+	// This shouldn't fail because if there are no remotes then @{push} won't resolve
+	rem, err := f.remotesFn()
+	if err != nil {
+		panic(err)
+	}
+
+	var gitRemoteRepo ghrepo.Interface
+	for _, r := range rem {
+		if strings.Contains(atPushRef, r.Remote.Name) {
+			gitRemoteRepo = r
+			break
+		}
+	}
+
+	if gitRemoteRepo != nil {
+		// prepend `OWNER:` if this branch is pushed to a fork
+		// This is determined by:
+		//  - The repo having a different owner
+		//  - The repo having the same owner but a different name (private org fork)
+		// I suspect that the implementation of the second case may be broken in the face
+		// of a repo rename, where the remote hasn't been updated locally. This is a
+		// frequent issue in commands that use SmartBaseRepoFunc. It's not any worse than not
+		// supporting this case at all though.
+		sameOwner := strings.EqualFold(gitRemoteRepo.RepoOwner(), f.repo.RepoOwner())
+		sameOwnerDifferentRepoName := sameOwner && !strings.EqualFold(gitRemoteRepo.RepoName(), f.repo.RepoName())
+		if !sameOwner || sameOwnerDifferentRepoName {
+			return fmt.Sprintf("%s:%s", gitRemoteRepo.RepoOwner(), branch), 0, nil
+		}
+	}
+
+	return branch, 0, nil
 }
 
 var prHeadRE = regexp.MustCompile(`^refs/pull/(\d+)/head$`)

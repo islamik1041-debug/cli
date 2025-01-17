@@ -2,6 +2,7 @@ package shared
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"testing"
@@ -17,6 +18,7 @@ import (
 type args struct {
 	baseRepoFn   func() (ghrepo.Interface, error)
 	branchFn     func() (string, error)
+	atPushRefFn  func(string) (string, error)
 	branchConfig func(string) (git.BranchConfig, error)
 	remotesFn    func() (context.Remotes, error)
 	selector     string
@@ -557,6 +559,152 @@ func TestFind(t *testing.T) {
 	}
 }
 
+func Test_parseCurrentBranchWithAtPushRef(t *testing.T) {
+	tests := []struct {
+		name           string
+		args           args
+		baseRepoRemote context.Remote
+		forkRepoRemote context.Remote
+		wantSelector   string
+		wantPR         int
+		wantError      error
+	}{
+		{
+			name: "When we fail to read the branch, it should return the error",
+			args: args{
+				branchFn: func() (string, error) {
+					return "", errors.New("branchErr")
+				},
+			},
+			wantSelector: "",
+			wantPR:       0,
+			wantError:    errors.New("branchErr"),
+		},
+		{
+			name: "When we fail to parse the @{push} ref, it should return the error",
+			args: args{
+				branchFn: func() (string, error) {
+					return "branchName", nil
+				},
+				branchConfig: stubBranchConfig(git.BranchConfig{}, nil),
+				atPushRefFn:  stubAtPushRef("", errors.New("atPushRefErr")),
+			},
+			wantSelector: "",
+			wantPR:       0,
+			wantError:    errors.New("atPushRefErr"),
+		},
+		{
+			name: "When the merge ref is a PR, it should return the PR number",
+			args: args{
+				branchFn: func() (string, error) {
+					return "branchName", nil
+				},
+				branchConfig: stubBranchConfig(git.BranchConfig{
+					MergeRef: "refs/pull/13/head",
+				}, nil),
+				atPushRefFn: stubAtPushRef("", nil),
+			},
+			wantSelector: "",
+			wantPR:       13,
+			wantError:    nil,
+		},
+		{
+			name: "When the branch config fails",
+			args: args{
+				branchFn: func() (string, error) {
+					return "branchName", nil
+				},
+				branchConfig: stubBranchConfig(git.BranchConfig{}, fmt.Errorf("branchConfigError")),
+				atPushRefFn:  stubAtPushRef("", nil),
+			},
+			wantSelector: "",
+			wantPR:       0,
+			wantError:    errors.New("branchConfigError"),
+		},
+		{
+			name: "When the merge ref is not a PR, it should return the branch name as the selector",
+			args: args{
+				branchFn: func() (string, error) {
+					return "branchName", nil
+				},
+				branchConfig: stubBranchConfig(git.BranchConfig{}, nil),
+				atPushRefFn:  stubAtPushRef("origin/branchName", nil),
+			},
+			baseRepoRemote: context.Remote{
+				Remote: &git.Remote{Name: "origin"},
+				Repo:   ghrepo.New("originOwner", "repo"),
+			},
+			wantSelector: "branchName",
+			wantPR:       0,
+			wantError:    nil,
+		},
+		{
+			name: "When the merge ref is not a PR, and the push remote is a fork, it should return the forkOwner:branchName as the selector",
+			args: args{
+				branchFn: func() (string, error) {
+					return "branchName", nil
+				},
+				branchConfig: stubBranchConfig(git.BranchConfig{}, nil),
+				atPushRefFn:  stubAtPushRef("origin/branchName", nil),
+			},
+			baseRepoRemote: context.Remote{
+				Remote: &git.Remote{Name: "upstream"},
+				Repo:   ghrepo.New("upstreamOwner", "repo"),
+			},
+			forkRepoRemote: context.Remote{
+				Remote: &git.Remote{Name: "origin"},
+				Repo:   ghrepo.New("originOwner", "repo"),
+			},
+			wantSelector: "originOwner:branchName",
+			wantPR:       0,
+			wantError:    nil,
+		},
+		{
+			name: "When the merge ref is not a PR, and the push remote is a fork with the same owner (indicating it is a private org fork), it should return the forkOwner:branchName as the selector",
+			args: args{
+				branchFn: func() (string, error) {
+					return "branchName", nil
+				},
+				branchConfig: stubBranchConfig(git.BranchConfig{}, nil),
+				atPushRefFn:  stubAtPushRef("origin/branchName", nil),
+			},
+			baseRepoRemote: context.Remote{
+				Remote: &git.Remote{Name: "upstream"},
+				Repo:   ghrepo.New("owner", "repo"),
+			},
+			forkRepoRemote: context.Remote{
+				Remote: &git.Remote{Name: "origin"},
+				Repo:   ghrepo.New("owner", "forked-repo"),
+			},
+			wantSelector: "owner:branchName",
+			wantPR:       0,
+			wantError:    nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := finder{
+				httpClient: func() (*http.Client, error) {
+					return &http.Client{}, nil
+				},
+				baseRepoFn:   stubBaseRepo(tt.baseRepoRemote.Repo, nil),
+				branchFn:     tt.args.branchFn,
+				branchConfig: tt.args.branchConfig,
+				remotesFn: stubRemotes(context.Remotes{
+					&tt.baseRepoRemote,
+					&tt.forkRepoRemote,
+				}, nil),
+				atPushRef: tt.args.atPushRefFn,
+				repo:      tt.baseRepoRemote.Repo,
+			}
+			selector, pr, err := f.parseCurrentBranchWithAtPushRef()
+			assert.Equal(t, tt.wantSelector, selector)
+			assert.Equal(t, tt.wantPR, pr)
+			assert.Equal(t, tt.wantError, err)
+		})
+	}
+}
+
 func Test_parseCurrentBranch(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -600,5 +748,23 @@ func Test_parseCurrentBranch(t *testing.T) {
 func stubBranchConfig(branchConfig git.BranchConfig, err error) func(string) (git.BranchConfig, error) {
 	return func(branch string) (git.BranchConfig, error) {
 		return branchConfig, err
+	}
+}
+
+func stubAtPushRef(refToReturn string, errToReturn error) func(string) (string, error) {
+	return func(branchName string) (string, error) {
+		return refToReturn, errToReturn
+	}
+}
+
+func stubRemotes(remotes context.Remotes, err error) func() (context.Remotes, error) {
+	return func() (context.Remotes, error) {
+		return remotes, err
+	}
+}
+
+func stubBaseRepo(repo ghrepo.Interface, err error) func() (ghrepo.Interface, error) {
+	return func() (ghrepo.Interface, error) {
+		return repo, err
 	}
 }
