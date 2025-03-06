@@ -191,7 +191,25 @@ func (p *huhPrompter) ConfirmDeletion(requiredValue string) error {
 	// 			}
 	// 			return nil
 	// 		}))
-	panic("not implemented")
+
+	var result string
+	form := p.newForm(
+		huh.NewGroup(
+			huh.NewInput().
+				Title(fmt.Sprintf("Type %q to confirm deletion", requiredValue)).
+				Validate(func(input string) error {
+					if input != requiredValue {
+						return fmt.Errorf("You entered: %q", input)
+					}
+					return nil
+				}).
+				Value(&result),
+			// This doesn't have any effect in accessible mode.
+			// EchoMode(huh.EchoModePassword),
+		),
+	)
+
+	return form.Run()
 }
 
 func (p *huhPrompter) InputHostname() (string, error) {
