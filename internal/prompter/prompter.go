@@ -81,15 +81,9 @@ func (p *huhPrompter) Select(prompt, defaultValue string, options []string) (int
 
 func (p *huhPrompter) MultiSelect(prompt string, defaults []string, options []string) ([]int, error) {
 	var result []int
-	formOptions := []huh.Option[int]{}
+	formOptions := make([]huh.Option[int], len(options))
 	for i, o := range options {
-		formOptions = append(formOptions, huh.NewOption(o, i))
-
-		for _, d := range defaults {
-			if d == o {
-				result = append(result, i)
-			}
-		}
+		formOptions[i] = huh.NewOption(o, i)
 	}
 
 	form := p.newForm(
