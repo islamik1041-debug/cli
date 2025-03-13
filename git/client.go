@@ -772,11 +772,28 @@ func outputLines(output []byte) []string {
 	return strings.Split(lines, "\n")
 }
 
-func firstLine(output []byte) string {
-	if i := bytes.IndexAny(output, "\n"); i >= 0 {
-		return string(output)[0:i]
+func firstLineLinux(output []byte) string {
+	if i := bytes.IndexByte(output, '\n'); i >= 0 {
+		return string(output[:i])
 	}
 	return string(output)
+}
+
+func firstLineWindows(output []byte) string {
+	if i := bytes.Index(output, []byte("\r\n")); i >= 0 {
+		return string(output[:i]) // Cut everything before \r\n
+	} else if i := bytes.IndexByte(output, '\n'); i >= 0 {
+		return string(output[:i]) // Fallback: handle LF-only newlines too
+	}
+	return string(output)
+}
+
+// firstLine selects the correct function based on OS.
+func firstLine(output []byte) string {
+	if runtime.GOOS == "windows" {
+		return firstLineWindows(output)
+	}
+	return firstLineLinux(output)
 }
 
 func parseCloneArgs(extraArgs []string) (args []string, target string) {
