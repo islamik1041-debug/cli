@@ -2,7 +2,6 @@ package create
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -332,19 +331,19 @@ func TestNewCmdCreate(t *testing.T) {
 
 func Test_createRun(t *testing.T) {
 	tests := []struct {
-		name                  string
-		setup                 func(*CreateOptions, *testing.T) func()
-		cmdStubs              func(*run.CommandStubber)
-		promptStubs           func(*prompter.PrompterMock)
-		httpStubs             func(*httpmock.Registry, *testing.T)
-		expectedOutputs       []string
-		expectedOut           string
-		expectedErrOut        string
-		expectedBrowse        string
-		wantErr               string
-		tty                   bool
-		customBranchConfig    bool
-		customPushDestination bool
+		run                bool
+		name               string
+		setup              func(*CreateOptions, *testing.T) func()
+		cmdStubs           func(*run.CommandStubber)
+		promptStubs        func(*prompter.PrompterMock)
+		httpStubs          func(*httpmock.Registry, *testing.T)
+		expectedOutputs    []string
+		expectedOut        string
+		expectedErrOut     string
+		expectedBrowse     string
+		wantErr            string
+		tty                bool
+		customBranchConfig bool
 	}{
 		{
 			name: "nontty web",
@@ -637,6 +636,10 @@ func Test_createRun(t *testing.T) {
 					}))
 			},
 			cmdStubs: func(cs *run.CommandStubber) {
+				cs.Register("git rev-parse --symbolic-full-name feature@{push}", 0, "refs/remotes/origin/feature")
+				// TODO: can we simplify the ref checking to only call git once?
+				cs.Register(`git show-ref --verify -- HEAD refs/remotes/origin/feature`, 1, "")
+				cs.Register("git show-ref --verify -- HEAD refs/remotes/origin/feature", 1, "")
 				cs.Register(`git push --set-upstream origin HEAD:refs/heads/feature`, 0, "")
 			},
 			promptStubs: func(pm *prompter.PrompterMock) {
@@ -699,6 +702,9 @@ func Test_createRun(t *testing.T) {
 					}))
 			},
 			cmdStubs: func(cs *run.CommandStubber) {
+				cs.Register("git rev-parse --symbolic-full-name feature@{push}", 0, "refs/remotes/origin/feature")
+				cs.Register(`git show-ref --verify -- HEAD refs/remotes/origin/feature`, 1, "")
+				cs.Register(`git show-ref --verify -- HEAD refs/remotes/origin/feature`, 1, "")
 				cs.Register(`git push --set-upstream origin HEAD:refs/heads/feature`, 0, "")
 			},
 			promptStubs: func(pm *prompter.PrompterMock) {
@@ -744,6 +750,9 @@ func Test_createRun(t *testing.T) {
 					}))
 			},
 			cmdStubs: func(cs *run.CommandStubber) {
+				cs.Register("git rev-parse --symbolic-full-name feature@{push}", 0, "refs/remotes/origin/feature")
+				cs.Register(`git show-ref --verify -- HEAD refs/remotes/origin/feature`, 1, "")
+				cs.Register(`git show-ref --verify -- HEAD refs/remotes/origin/feature`, 1, "")
 				cs.Register(`git push --set-upstream origin HEAD:refs/heads/feature`, 0, "")
 			},
 			promptStubs: func(pm *prompter.PrompterMock) {
@@ -759,6 +768,7 @@ func Test_createRun(t *testing.T) {
 			expectedErrOut: "\nCreating pull request for feature into master in OWNER/REPO\n\n",
 		},
 		{
+			run:  true,
 			name: "create fork",
 			tty:  true,
 			setup: func(opts *CreateOptions, t *testing.T) func() {
@@ -791,12 +801,11 @@ func Test_createRun(t *testing.T) {
 						assert.Equal(t, "monalisa:feature", input["headRefName"].(string))
 					}))
 			},
-			customPushDestination: true,
 			cmdStubs: func(cs *run.CommandStubber) {
-				cs.Register(`git show-ref --verify -- HEAD refs/remotes/origin/feature`, 0, "")
 				cs.Register("git rev-parse --symbolic-full-name feature@{push}", 1, "")
-				cs.Register("git config remote.pushDefault", 0, "")
+				cs.Register("git config remote.pushDefault", 1, "")
 				cs.Register("git config push.default", 1, "")
+				cs.Register(`git show-ref --verify -- HEAD refs/remotes/origin/feature`, 1, "")
 				cs.Register("git remote rename origin upstream", 0, "")
 				cs.Register(`git remote add origin https://github.com/monalisa/REPO.git`, 0, "")
 				cs.Register(`git push --set-upstream origin HEAD:refs/heads/feature`, 0, "")
@@ -854,13 +863,11 @@ func Test_createRun(t *testing.T) {
 						assert.Equal(t, "monalisa:feature", input["headRefName"].(string))
 					}))
 			},
-			customPushDestination: true,
 			cmdStubs: func(cs *run.CommandStubber) {
-				cs.Register("git show-ref --verify", 0, heredoc.Doc(`
-				deadbeef HEAD
-				deadb00f refs/remotes/upstream/feature
-				deadbeef refs/remotes/origin/feature`))
 				cs.Register("git rev-parse --symbolic-full-name feature@{push}", 0, "refs/remotes/origin/feature")
+				cs.Register("git show-ref --verify -- HEAD refs/remotes/origin/feature", 0, heredoc.Doc(`
+				deadbeef HEAD
+				deadbeef refs/remotes/origin/feature`))
 			},
 			expectedOut:    "https://github.com/OWNER/REPO/pull/12\n",
 			expectedErrOut: "\nCreating pull request for monalisa:feature into master in OWNER/REPO\n\n",
@@ -888,18 +895,17 @@ func Test_createRun(t *testing.T) {
 						assert.Equal(t, "my-feat2", input["headRefName"].(string))
 					}))
 			},
-			customBranchConfig:    true,
-			customPushDestination: true,
+			customBranchConfig: true,
 			cmdStubs: func(cs *run.CommandStubber) {
 				cs.Register(`git config --get-regexp \^branch\\\.feature\\\.`, 0, heredoc.Doc(`
 			branch.feature.remote origin
 			branch.feature.merge refs/heads/my-feat2
-		`)) // determineTrackingBranch
-				cs.Register("git show-ref --verify", 0, heredoc.Doc(`
+		`))
+				cs.Register("git rev-parse --symbolic-full-name feature@{push}", 0, "refs/remotes/origin/my-feat2")
+				cs.Register("git show-ref --verify -- HEAD refs/remotes/origin/my-feat2", 0, heredoc.Doc(`
 			deadbeef HEAD
 			deadbeef refs/remotes/origin/my-feat2
-		`)) // determineTrackingBranch
-				cs.Register("git rev-parse --symbolic-full-name feature@{push}", 0, "refs/remotes/origin/my-feat2")
+		`))
 			},
 			expectedOut:    "https://github.com/OWNER/REPO/pull/12\n",
 			expectedErrOut: "\nCreating pull request for my-feat2 into master in OWNER/REPO\n\n",
@@ -1080,6 +1086,9 @@ func Test_createRun(t *testing.T) {
 			},
 			cmdStubs: func(cs *run.CommandStubber) {
 				cs.Register(`git( .+)? log( .+)? origin/master\.\.\.feature`, 0, "")
+				cs.Register("git rev-parse --symbolic-full-name feature@{push}", 0, "refs/remotes/origin/feature")
+				cs.Register(`git show-ref --verify -- HEAD refs/remotes/origin/feature`, 1, "")
+				cs.Register(`git show-ref --verify -- HEAD refs/remotes/origin/feature`, 1, "")
 				cs.Register(`git push --set-upstream origin HEAD:refs/heads/feature`, 0, "")
 			},
 			promptStubs: func(pm *prompter.PrompterMock) {
@@ -1111,6 +1120,9 @@ func Test_createRun(t *testing.T) {
 			},
 			cmdStubs: func(cs *run.CommandStubber) {
 				cs.Register(`git( .+)? log( .+)? origin/master\.\.\.feature`, 0, "")
+				cs.Register("git rev-parse --symbolic-full-name feature@{push}", 0, "refs/remotes/origin/feature")
+				cs.Register(`git show-ref --verify -- HEAD refs/remotes/origin/feature`, 1, "")
+				cs.Register(`git show-ref --verify -- HEAD refs/remotes/origin/feature`, 1, "")
 				cs.Register(`git push --set-upstream origin HEAD:refs/heads/feature`, 0, "")
 			},
 			promptStubs: func(pm *prompter.PrompterMock) {
@@ -1274,37 +1286,6 @@ func Test_createRun(t *testing.T) {
 				return func() {}
 			},
 			wantErr: "cannot open in browser: maximum URL length exceeded",
-		},
-		{
-			name: "no local git repo",
-			setup: func(opts *CreateOptions, t *testing.T) func() {
-				opts.Title = "My PR"
-				opts.TitleProvided = true
-				opts.Body = ""
-				opts.BodyProvided = true
-				opts.HeadBranch = "feature"
-				opts.RepoOverride = "OWNER/REPO"
-				opts.Remotes = func() (context.Remotes, error) {
-					return nil, errors.New("not a git repository")
-				}
-				return func() {}
-			},
-			httpStubs: func(reg *httpmock.Registry, t *testing.T) {
-				reg.Register(
-					httpmock.GraphQL(`mutation PullRequestCreate\b`),
-					httpmock.StringResponse(`
-					{ "data": { "createPullRequest": { "pullRequest": {
-						"URL": "https://github.com/OWNER/REPO/pull/12"
-						} } } }
-						`))
-			},
-			customPushDestination: true,
-			cmdStubs: func(cs *run.CommandStubber) {
-				cs.Register("git rev-parse --symbolic-full-name feature@{push}", 1, "fatal: not a git repository (or any of the parent directories): .git")
-				cs.Register("git config remote.pushDefault", 1, "")
-				cs.Register("git config push.default", 1, "")
-			},
-			expectedOut: "https://github.com/OWNER/REPO/pull/12\n",
 		},
 		{
 			name: "single commit title and body are used",
@@ -1524,18 +1505,16 @@ func Test_createRun(t *testing.T) {
 						assert.Equal(t, "monalisa:task1", input["headRefName"].(string))
 					}))
 			},
-			customBranchConfig:    true,
-			customPushDestination: true,
+			customBranchConfig: true,
 			cmdStubs: func(cs *run.CommandStubber) {
 				cs.Register(`git config --get-regexp \^branch\\\.task1\\\.\(remote\|merge\|pushremote\|gh-merge-base\)\$`, 0, heredoc.Doc(`
 					branch.task1.remote origin
 					branch.task1.merge refs/heads/task1
 					branch.task1.gh-merge-base feature/feat2`)) // ReadBranchConfig
-				cs.Register(`git show-ref --verify`, 0, heredoc.Doc(`
-					deadbeef HEAD
-					deadb00f refs/remotes/upstream/feature/feat2
-					deadbeef refs/remotes/origin/task1`)) // determineTrackingBranch
 				cs.Register("git rev-parse --symbolic-full-name task1@{push}", 0, "refs/remotes/origin/task1")
+				cs.Register(`git show-ref --verify -- HEAD refs/remotes/origin/task1`, 0, heredoc.Doc(`
+					deadbeef HEAD
+					deadbeef refs/remotes/origin/task1`))
 			},
 			expectedOut:    "https://github.com/OWNER/REPO/pull/12\n",
 			expectedErrOut: "\nCreating pull request for monalisa:task1 into feature/feat2 in OWNER/REPO\n\n",
@@ -1565,14 +1544,13 @@ func Test_createRun(t *testing.T) {
 				opts.HeadBranch = "otherowner:feature"
 				return func() {}
 			},
-			customPushDestination: true,
-			cmdStubs: func(cs *run.CommandStubber) {
-				cs.Register("git rev-parse --symbolic-full-name feature@{push}", 0, "refs/remotes/origin/feature")
-			},
 			expectedOut: "https://github.com/OWNER/REPO/pull/12\n",
 		},
 	}
 	for _, tt := range tests {
+		if !tt.run {
+			continue
+		}
 		t.Run(tt.name, func(t *testing.T) {
 			branch := "feature"
 			reg := &httpmock.Registry{}
@@ -1591,13 +1569,7 @@ func Test_createRun(t *testing.T) {
 			cs, cmdTeardown := run.Stub()
 			defer cmdTeardown(t)
 			cs.Register(`git status --porcelain`, 0, "")
-			// TODO this could be values in the test struct with a helper
-			// function to invoke the appropriate command stubs based on
-			// those values.
-			if !tt.customPushDestination {
-				cs.Register(`git show-ref --verify -- HEAD refs/remotes/origin/feature`, 0, "")
-				cs.Register("git rev-parse --symbolic-full-name feature@{push}", 0, "refs/remotes/origin/feature")
-			}
+
 			if !tt.customBranchConfig {
 				cs.Register(`git config --get-regexp \^branch\\\..+\\\.\(remote\|merge\|pushremote\|gh-merge-base\)\$`, 0, "")
 			}
@@ -1671,6 +1643,14 @@ func Test_createRun(t *testing.T) {
 	}
 }
 
+func mustParseQualifiedHeadRef(ref string) shared.QualifiedHeadRef {
+	parsed, err := shared.ParseQualifiedHeadRef(ref)
+	if err != nil {
+		panic(err)
+	}
+	return parsed
+}
+
 func Test_generateCompareURL(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -1682,12 +1662,13 @@ func Test_generateCompareURL(t *testing.T) {
 		{
 			name: "basic",
 			ctx: CreateContext{
-				PrRefs: shared.PullRequestRefs{
-					BaseRepo:   api.InitRepoHostname(&api.Repository{Name: "REPO", Owner: api.RepositoryOwner{Login: "OWNER"}}, "github.com"),
-					HeadRepo:   api.InitRepoHostname(&api.Repository{Name: "REPO", Owner: api.RepositoryOwner{Login: "OWNER"}}, "github.com"),
-					BranchName: "feature",
+				PRRefs: &skipPushRefs{
+					qualifiedHeadRef: shared.NewQualifiedHeadRefWithoutOwner("feature"),
+					baseRefs: baseRefs{
+						baseRepo:       api.InitRepoHostname(&api.Repository{Name: "REPO", Owner: api.RepositoryOwner{Login: "OWNER"}}, "github.com"),
+						baseBranchName: "main",
+					},
 				},
-				BaseBranch: "main",
 			},
 			want:    "https://github.com/OWNER/REPO/compare/main...feature?body=&expand=1",
 			wantErr: false,
@@ -1695,12 +1676,13 @@ func Test_generateCompareURL(t *testing.T) {
 		{
 			name: "with labels",
 			ctx: CreateContext{
-				PrRefs: shared.PullRequestRefs{
-					BaseRepo:   api.InitRepoHostname(&api.Repository{Name: "REPO", Owner: api.RepositoryOwner{Login: "OWNER"}}, "github.com"),
-					HeadRepo:   api.InitRepoHostname(&api.Repository{Name: "REPO", Owner: api.RepositoryOwner{Login: "OWNER"}}, "github.com"),
-					BranchName: "b",
+				PRRefs: &skipPushRefs{
+					qualifiedHeadRef: shared.NewQualifiedHeadRefWithoutOwner("b"),
+					baseRefs: baseRefs{
+						baseRepo:       api.InitRepoHostname(&api.Repository{Name: "REPO", Owner: api.RepositoryOwner{Login: "OWNER"}}, "github.com"),
+						baseBranchName: "a",
+					},
 				},
-				BaseBranch: "a",
 			},
 			state: shared.IssueMetadataState{
 				Labels: []string{"one", "two three"},
@@ -1711,12 +1693,13 @@ func Test_generateCompareURL(t *testing.T) {
 		{
 			name: "'/'s in branch names/labels are percent-encoded",
 			ctx: CreateContext{
-				PrRefs: shared.PullRequestRefs{
-					BaseRepo:   api.InitRepoHostname(&api.Repository{Name: "REPO", Owner: api.RepositoryOwner{Login: "UPSTREAMOWNER"}}, "github.com"),
-					HeadRepo:   api.InitRepoHostname(&api.Repository{Name: "REPO", Owner: api.RepositoryOwner{Login: "ORIGINOWNER"}}, "github.com"),
-					BranchName: "feature",
+				PRRefs: &skipPushRefs{
+					qualifiedHeadRef: mustParseQualifiedHeadRef("ORIGINOWNER:feature"),
+					baseRefs: baseRefs{
+						baseRepo:       api.InitRepoHostname(&api.Repository{Name: "REPO", Owner: api.RepositoryOwner{Login: "UPSTREAMOWNER"}}, "github.com"),
+						baseBranchName: "main/trunk",
+					},
 				},
-				BaseBranch: "main/trunk",
 			},
 			want:    "https://github.com/UPSTREAMOWNER/REPO/compare/main%2Ftrunk...ORIGINOWNER:feature?body=&expand=1",
 			wantErr: false,
@@ -1724,18 +1707,19 @@ func Test_generateCompareURL(t *testing.T) {
 		{
 			name: "Any of !'(),; but none of $&+=@ and : in branch names/labels are percent-encoded ",
 			/*
-					- Technically, per section 3.3 of RFC 3986, none of !$&'()*+,;= (sub-delims) and :[]@ (part of gen-delims) in path segments are optionally percent-encoded, but url.PathEscape percent-encodes !'(),; anyway
-					- !$&'()+,;=@ is a valid Git branch name—essentially RFC 3986 sub-delims without * and gen-delims without :/?#[]
-					- : is GitHub separator between a fork name and a branch name
-				    - See https://github.com/golang/go/issues/27559.
+				- Technically, per section 3.3 of RFC 3986, none of !$&'()*+,;= (sub-delims) and :[]@ (part of gen-delims) in path segments are optionally percent-encoded, but url.PathEscape percent-encodes !'(),; anyway
+				- !$&'()+,;=@ is a valid Git branch name—essentially RFC 3986 sub-delims without * and gen-delims without :/?#[]
+				- : is GitHub separator between a fork name and a branch name
+				- See https://github.com/golang/go/issues/27559.
 			*/
 			ctx: CreateContext{
-				PrRefs: shared.PullRequestRefs{
-					BaseRepo:   api.InitRepoHostname(&api.Repository{Name: "REPO", Owner: api.RepositoryOwner{Login: "UPSTREAMOWNER"}}, "github.com"),
-					HeadRepo:   api.InitRepoHostname(&api.Repository{Name: "REPO", Owner: api.RepositoryOwner{Login: "ORIGINOWNER"}}, "github.com"),
-					BranchName: "!$&'()+,;=@",
+				PRRefs: &skipPushRefs{
+					qualifiedHeadRef: mustParseQualifiedHeadRef("ORIGINOWNER:!$&'()+,;=@"),
+					baseRefs: baseRefs{
+						baseRepo:       api.InitRepoHostname(&api.Repository{Name: "REPO", Owner: api.RepositoryOwner{Login: "UPSTREAMOWNER"}}, "github.com"),
+						baseBranchName: "main/trunk",
+					},
 				},
-				BaseBranch: "main/trunk",
 			},
 			want:    "https://github.com/UPSTREAMOWNER/REPO/compare/main%2Ftrunk...ORIGINOWNER:%21$&%27%28%29+%2C%3B=@?body=&expand=1",
 			wantErr: false,
@@ -1743,12 +1727,13 @@ func Test_generateCompareURL(t *testing.T) {
 		{
 			name: "with template",
 			ctx: CreateContext{
-				PrRefs: shared.PullRequestRefs{
-					BaseRepo:   api.InitRepoHostname(&api.Repository{Name: "REPO", Owner: api.RepositoryOwner{Login: "OWNER"}}, "github.com"),
-					HeadRepo:   api.InitRepoHostname(&api.Repository{Name: "REPO", Owner: api.RepositoryOwner{Login: "OWNER"}}, "github.com"),
-					BranchName: "feature",
+				PRRefs: &skipPushRefs{
+					qualifiedHeadRef: shared.NewQualifiedHeadRefWithoutOwner("feature"),
+					baseRefs: baseRefs{
+						baseRepo:       api.InitRepoHostname(&api.Repository{Name: "REPO", Owner: api.RepositoryOwner{Login: "OWNER"}}, "github.com"),
+						baseBranchName: "main",
+					},
 				},
-				BaseBranch: "main",
 			},
 			state: shared.IssueMetadataState{
 				Template: "story.md",

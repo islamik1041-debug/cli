@@ -102,30 +102,33 @@ func statusRun(opts *StatusOptions) error {
 			return fmt.Errorf("could not query for pull request for current branch: %w", err)
 		}
 
-		branchConfig, err := opts.GitClient.ReadBranchConfig(ctx, currentBranchName)
-		if err != nil {
-			return err
-		}
-		// Determine if the branch is configured to merge to a special PR ref
-		prHeadRE := regexp.MustCompile(`^refs/pull/(\d+)/head$`)
-		if m := prHeadRE.FindStringSubmatch(branchConfig.MergeRef); m != nil {
-			currentPRNumber, _ = strconv.Atoi(m[1])
-		}
-
-		if currentPRNumber == 0 {
-			remotes, err := opts.Remotes()
+		if !errors.Is(err, git.ErrNotOnAnyBranch) {
+			branchConfig, err := opts.GitClient.ReadBranchConfig(ctx, currentBranchName)
 			if err != nil {
 				return err
 			}
-
-			prRefs, err := shared.ResolvePRRefs(gitClientWithCachedBranchConfig{
-				cachedBranchConfig: branchConfig,
-				Client:             opts.GitClient,
-			}, remotes, baseRefRepo, currentBranchName)
-			if err != nil {
-				return err
+			// Determine if the branch is configured to merge to a special PR ref
+			prHeadRE := regexp.MustCompile(`^refs/pull/(\d+)/head$`)
+			if m := prHeadRE.FindStringSubmatch(branchConfig.MergeRef); m != nil {
+				currentPRNumber, _ = strconv.Atoi(m[1])
 			}
-			currentHeadRefBranchName = prRefs.BranchName
+
+			if currentPRNumber == 0 {
+				prRefsResolver := shared.NewPullRequestFindRefsResolver(
+					gitClientWithCachedBranchConfig{
+						cachedBranchConfig: branchConfig,
+						Client:             opts.GitClient,
+					},
+					opts.Remotes,
+				)
+
+				prRefs, err := prRefsResolver.ResolvePullRequestRefs(baseRefRepo, "", currentBranchName)
+				if err != nil {
+					return err
+				}
+
+				currentHeadRefBranchName = prRefs.QualifiedHeadRef()
+			}
 		}
 	}
 

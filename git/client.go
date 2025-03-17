@@ -446,11 +446,11 @@ type PushDefault string
 
 const (
 	PushDefaultNothing  PushDefault = "nothing"
-	PushDefaultCurrent              = "current"
-	PushDefaultUpstream             = "upstream"
-	PushDefaultTracking             = "tracking"
-	PushDefaultSimple               = "simple"
-	PushDefaultMatching             = "matching"
+	PushDefaultCurrent  PushDefault = "current"
+	PushDefaultUpstream PushDefault = "upstream"
+	PushDefaultTracking PushDefault = "tracking"
+	PushDefaultSimple   PushDefault = "simple"
+	PushDefaultMatching PushDefault = "matching"
 )
 
 func ParsePushDefault(s string) (PushDefault, error) {

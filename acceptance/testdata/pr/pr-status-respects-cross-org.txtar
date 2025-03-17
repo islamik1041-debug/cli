@@ -1,4 +1,4 @@
-#skip 'it creates a fork owned by the user running the test'
+##skip 'it creates a fork owned by the user running the test'
 
 # Setup environment variables used for testscript
 env REPO=${SCRIPT_NAME}-${RANDOM_STRING}
@@ -34,16 +34,13 @@ cd ${FORK}
 
 # Prepare a branch where changes are pulled from the upstream default branch but pushed to fork
 exec git checkout -b feature-branch
-exec git branch --set-upstream-to upstream/main
-exec git config branch.feature-branch.pushRemote origin
-exec git config unset remote.upstream.gh-resolved
 exec git commit --allow-empty -m 'Empty Commit'
-exec git push
+exec git push -u origin feature-branch
 
 # Create the PR spanning upstream and fork repositories
 exec gh pr create --title 'Feature Title' --body 'Feature Body'
 stdout https://${GH_HOST}/${ORG}/${REPO}/pull/1
 
 # Assert that the PR was created with the correct head repository and refs
-exec gh pr view --json headRefName,headRepository,baseRefName,isCrossRepository
-stdout {"baseRefName":"main","headRefName":"feature-branch","headRepository":{"id":"${FORK_ID}","name":"${FORK}"},"isCrossRepository":true}
+exec gh pr status
+! stdout 'There is no pull request associated with'

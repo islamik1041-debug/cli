@@ -432,14 +432,6 @@ func TestPRStatus_detachedHead(t *testing.T) {
 	defer http.Verify(t)
 	http.Register(httpmock.GraphQL(`query PullRequestStatus\b`), httpmock.StringResponse(`{"data": {}}`))
 
-	// stub successful git command
-	rs, cleanup := run.Stub()
-	defer cleanup(t)
-	rs.Register(`git config --get-regexp \^branch\\.`, 0, "")
-	rs.Register(`git config remote.pushDefault`, 0, "")
-	rs.Register(`git rev-parse --symbolic-full-name @{push}`, 128, "")
-	rs.Register(`git config push.default`, 1, "")
-
 	output, err := runCommand(http, "", true, "")
 	if err != nil {
 		t.Errorf("error running command `pr status`: %v", err)
