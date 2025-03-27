@@ -73,9 +73,9 @@ type CreateOptions struct {
 	DryRun bool
 }
 
-// refs is an interface that provides the necessary information for creating a pull request in the API.
+// creationRefs is an interface that provides the necessary information for creating a pull request in the API.
 // Upcasting to concrete implementations can provide further context on other operations (forking and pushing).
-type refs interface {
+type creationRefs interface {
 	QualifiedHeadRef() string
 	UnqualifiedHeadRef() string
 	BaseRef() string
@@ -153,7 +153,7 @@ func (r forkableRefs) UnqualifiedHeadRef() string {
 // data to create a pull request.
 type CreateContext struct {
 	ResolvedRemotes *ghContext.ResolvedRemotes
-	PRRefs          refs
+	PRRefs          creationRefs
 	// BaseTrackingBranch is perhaps a slightly leaky abstraction in the presence
 	// of PRRefs, but a huge amount of refactoring was done to introduce that struct,
 	// and this is a small price to pay for the convenience of not having to do a lot
@@ -661,7 +661,7 @@ func NewCreateContext(opts *CreateOptions) (*CreateContext, error) {
 	// This closure provides an easy way to instantiate a CreateContext with everything other than
 	// the refs. This probably indicates that CreateContext could do with some rework, but the refactor
 	// to introduce PRRefs is already large enough.
-	var newCreateContext = func(refs refs) *CreateContext {
+	var newCreateContext = func(refs creationRefs) *CreateContext {
 		baseTrackingBranch := refs.BaseRef()
 
 		// The baseTrackingBranch is used later for a command like:
