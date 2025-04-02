@@ -225,8 +225,6 @@ func (ru remoteURL) sealedRemote() {}
 // returns a function that takes a remote name and returns the corresponding
 // repository. It is a convenience function to call sites having to duplicate
 // the same logic.
-//
-// Conceivably, it could be collapsed into the RemoteToRepoResolver, but
 func newRemoteNameToRepoFn(remotesFn func() (ghContext.Remotes, error)) RemoteNameToRepoFn {
 	return func(remoteName string) (ghrepo.Interface, error) {
 		remotes, err := remotesFn()
