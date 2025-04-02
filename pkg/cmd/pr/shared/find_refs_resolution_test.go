@@ -358,6 +358,7 @@ func TestTryDetermineDefaultPRHead(t *testing.T) {
 		require.True(t, ghrepo.IsSame(defaultPRHead.Repo.Unwrap(), forkRepo), "expected repos to be the same")
 		require.Equal(t, "feature-branch", defaultPRHead.BranchName)
 	})
+
 	t.Run("when the branch config remote is set to a name, use that", func(t *testing.T) {
 		t.Parallel()
 
