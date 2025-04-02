@@ -311,7 +311,7 @@ func newDefaultPushTarget(remote remote, branchName string) defaultPushTarget {
 // If none of these are set, we indicate that we were unable to determine the
 // remote by returning a None value for the remote.
 //
-// The branch name is always set. The deafult configuration for push.default (current) indicates
+// The branch name is always set. The default configuration for push.default (current) indicates
 // that a git push should use the same remote branch name as the local branch name. If push.default
 // is set to upstream or tracking (deprecated form of upstream), then we use the branch name from the merge ref.
 func tryDetermineDefaultPushTarget(gitClient GitConfigClient, localBranchName string) (defaultPushTarget, error) {
