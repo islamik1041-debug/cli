@@ -521,7 +521,7 @@ func NewMockFinder(selector string, pr *api.PullRequest, repo ghrepo.Interface) 
 	return &mockFinder{
 		expectSelector: selector,
 		pr:             pr,
-		repo:           repo, // <--- sus
+		repo:           repo,
 		err:            err,
 	}
 }
