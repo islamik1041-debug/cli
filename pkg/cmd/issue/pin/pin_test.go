@@ -33,14 +33,14 @@ func TestNewCmdPin(t *testing.T) {
 			name:  "issue number",
 			input: "6",
 			output: PinOptions{
-				SelectorArg: "6",
+				IssueNumber: 6,
 			},
 		},
 		{
 			name:  "issue url",
-			input: "https://github.com/cli/cli/6",
+			input: "https://github.com/cli/cli/issues/6",
 			output: PinOptions{
-				SelectorArg: "https://github.com/cli/cli/6",
+				IssueNumber: 6,
 			},
 		},
 	}
@@ -72,7 +72,7 @@ func TestNewCmdPin(t *testing.T) {
 			}
 
 			assert.NoError(t, err)
-			assert.Equal(t, tt.output.SelectorArg, gotOpts.SelectorArg)
+			assert.Equal(t, tt.output.IssueNumber, gotOpts.IssueNumber)
 		})
 	}
 }
@@ -89,7 +89,7 @@ func TestPinRun(t *testing.T) {
 		{
 			name: "pin issue",
 			tty:  true,
-			opts: &PinOptions{SelectorArg: "20"},
+			opts: &PinOptions{IssueNumber: 20},
 			httpStubs: func(reg *httpmock.Registry) {
 				reg.Register(
 					httpmock.GraphQL(`query IssueByNumber\b`),
@@ -113,7 +113,7 @@ func TestPinRun(t *testing.T) {
 		{
 			name: "issue already pinned",
 			tty:  true,
-			opts: &PinOptions{SelectorArg: "20"},
+			opts: &PinOptions{IssueNumber: 20},
 			httpStubs: func(reg *httpmock.Registry) {
 				reg.Register(
 					httpmock.GraphQL(`query IssueByNumber\b`),
