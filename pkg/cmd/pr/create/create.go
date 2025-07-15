@@ -596,34 +596,33 @@ func createRun(opts *CreateOptions) error {
 
 var regexPattern = regexp.MustCompile(`(?m)^`)
 
-func initDefaultTitleBody(ctx CreateContext, state *shared.IssueMetadataState, useFirstCommit bool, addBody bool) error {
+func computeDefaultTitleBody(ctx CreateContext, useFirstCommit bool, addBody bool) (string, string, error) {
 	commits, err := ctx.GitClient.Commits(context.Background(), ctx.BaseTrackingBranch, ctx.PRRefs.UnqualifiedHeadRef())
 	if err != nil {
-		return err
+		return "", "", err
 	}
 
 	if len(commits) == 1 || useFirstCommit {
-		state.Title = commits[len(commits)-1].Title
-		state.Body = commits[len(commits)-1].Body
-	} else {
-		state.Title = humanize(ctx.PRRefs.UnqualifiedHeadRef())
-		var body strings.Builder
-		for i := len(commits) - 1; i >= 0; i-- {
-			fmt.Fprintf(&body, "- **%s**\n", commits[i].Title)
-			if addBody {
-				x := regexPattern.ReplaceAllString(commits[i].Body, "  ")
-				fmt.Fprintf(&body, "%s", x)
-
-				if i > 0 {
-					fmt.Fprintln(&body)
-					fmt.Fprintln(&body)
-				}
-			}
-		}
-		state.Body = body.String()
+		return commits[len(commits)-1].Title, commits[len(commits)-1].Body, nil
 	}
 
-	return nil
+	title := humanize(ctx.PRRefs.UnqualifiedHeadRef())
+	var sb strings.Builder
+	for i := len(commits) - 1; i >= 0; i-- {
+		fmt.Fprintf(&sb, "- **%s**\n", commits[i].Title)
+		if addBody {
+			x := regexPattern.ReplaceAllString(commits[i].Body, "  ")
+			fmt.Fprintf(&sb, "%s", x)
+
+			if i > 0 {
+				fmt.Fprintln(&sb)
+				fmt.Fprintln(&sb)
+			}
+		}
+	}
+	body := sb.String()
+
+	return title, body, nil
 }
 
 func NewIssueState(ctx CreateContext, opts CreateOptions) (*shared.IssueMetadataState, error) {
@@ -646,12 +645,21 @@ func NewIssueState(ctx CreateContext, opts CreateOptions) (*shared.IssueMetadata
 		ProjectTitles: opts.Projects,
 		Milestones:    milestoneTitles,
 		Draft:         opts.IsDraft,
+		Title:         opts.Title,
+		Body:          opts.Body,
 	}
 
 	if opts.FillVerbose || opts.Autofill || opts.FillFirst || !opts.TitleProvided || !opts.BodyProvided {
-		err := initDefaultTitleBody(ctx, state, opts.FillFirst, opts.FillVerbose)
+		title, body, err := computeDefaultTitleBody(ctx, opts.FillFirst, opts.FillVerbose)
 		if err != nil && (opts.FillVerbose || opts.Autofill || opts.FillFirst) {
 			return nil, fmt.Errorf("could not compute title or body defaults: %w", err)
+		} else {
+			if !opts.TitleProvided {
+				state.Title = title
+			}
+			if !opts.BodyProvided {
+				state.Body = body
+			}
 		}
 	}
 
