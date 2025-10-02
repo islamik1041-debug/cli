@@ -1730,6 +1730,79 @@ func TestClientPull(t *testing.T) {
 	}
 }
 
+func TestHasRemoteTrackingRef(t *testing.T) {
+	tests := []struct {
+		name          string
+		branch        string
+		commandResult commandResult
+		wantOut       bool
+		wantError     error
+	}{
+		{
+			name:   "@{upstream} resolves to refs/remotes/origin/branchName",
+			branch: "branchName",
+			commandResult: commandResult{
+				ExitStatus: 0,
+				Stdout:     "refs/remotes/origin/branchName",
+			},
+			wantOut: true,
+		},
+		{
+			name:   "@{upstream} doesn't resolve due to no upstream",
+			branch: "branchName",
+			commandResult: commandResult{
+				ExitStatus: 128,
+				Stderr:     "fatal: no upstream configured for branch 'branchName'",
+			},
+			wantOut: false,
+			wantError: &GitError{
+				ExitCode: 128,
+				Stderr:   "fatal: no upstream configured for branch 'branchName'",
+			},
+		},
+		{
+			name:   "@{upstream} doesn't resolve due to non-existing branch",
+			branch: "branchName",
+			commandResult: commandResult{
+				ExitStatus: 128,
+				Stderr:     "fatal: no such branch: 'asdfasdf'",
+			},
+			wantOut: false,
+			wantError: &GitError{
+				ExitCode: 128,
+				Stderr:   "fatal: no such branch: 'asdfasdf'",
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd := fmt.Sprintf("path/to/git rev-parse --symbolic-full-name %s@{upstream}", tt.branch)
+			cmdCtx := createMockedCommandContext(t, mockedCommands{
+				args(cmd): tt.commandResult,
+			})
+			client := Client{
+				GitPath:        "path/to/git",
+				commandContext: cmdCtx,
+			}
+			result, err := client.HasRemoteTrackingRef(context.Background(), tt.branch)
+			if tt.wantError != nil {
+				var wantErrorAsGit *GitError
+				if errors.As(tt.wantError, &wantErrorAsGit) {
+					var gitError *GitError
+					require.ErrorAs(t, err, &gitError)
+					assert.Equal(t, wantErrorAsGit.ExitCode, gitError.ExitCode)
+					assert.Equal(t, wantErrorAsGit.Stderr, gitError.Stderr)
+				} else {
+					assert.Equal(t, err, tt.wantError)
+				}
+			} else {
+				require.NoError(t, err)
+			}
+			assert.Equal(t, tt.wantOut, result)
+		})
+	}
+}
+
 func TestClientPush(t *testing.T) {
 	tests := []struct {
 		name         string
